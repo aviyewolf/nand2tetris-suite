@@ -193,12 +193,13 @@ endif()
 # ==============================================================================
 # Define what gets installed and where
 
-install(
-    TARGETS cpu_sim vm_emu jack_debug hdl_sim
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
+# Install targets will be added as CLI tools are implemented
+# install(
+#     TARGETS cpu_sim vm_emu jack_debug hdl_sim
+#     RUNTIME DESTINATION bin
+#     LIBRARY DESTINATION lib
+#     ARCHIVE DESTINATION lib
+# )
 
 # Install header files for library users
 install(
