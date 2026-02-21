@@ -94,6 +94,32 @@ void HDLEngine::eval() {
     }
 }
 
+void HDLEngine::tick() {
+    if (!chip_) {
+        set_error("No chip loaded");
+        return;
+    }
+    try {
+        chip_->tick();
+        stats_.eval_count++;
+    } catch (const N2TError& e) {
+        set_error(e.what());
+    }
+}
+
+void HDLEngine::tock() {
+    if (!chip_) {
+        set_error("No chip loaded");
+        return;
+    }
+    try {
+        chip_->tock();
+        stats_.eval_count++;
+    } catch (const N2TError& e) {
+        set_error(e.what());
+    }
+}
+
 // ==============================================================================
 // Test Script Execution
 // ==============================================================================
@@ -175,6 +201,10 @@ ChipResolver HDLEngine::make_resolver() {
         const auto& builtins = get_builtin_registry();
         auto bit = builtins.find(name);
         if (bit != builtins.end()) {
+            if (bit->second.tick_fn || bit->second.tock_fn) {
+                return std::make_unique<HDLChip>(bit->second.def,
+                    bit->second.eval_fn, bit->second.tick_fn, bit->second.tock_fn);
+            }
             return std::make_unique<HDLChip>(bit->second.def, bit->second.eval_fn);
         }
 

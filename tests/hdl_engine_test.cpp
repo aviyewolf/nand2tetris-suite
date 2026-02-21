@@ -826,6 +826,506 @@ void test_error_bad_hdl() {
 }
 
 // ==============================================================================
+// Sequential Chip Tests (Phase 2)
+// ==============================================================================
+
+// Helper to create a sequential builtin chip
+static std::unique_ptr<HDLChip> make_seq_builtin(const std::string& name) {
+    const auto& reg = get_builtin_registry();
+    auto it = reg.find(name);
+    if (it == reg.end()) return nullptr;
+    if (it->second.tick_fn || it->second.tock_fn) {
+        return std::make_unique<HDLChip>(it->second.def,
+            it->second.eval_fn, it->second.tick_fn, it->second.tock_fn);
+    }
+    return std::make_unique<HDLChip>(it->second.def, it->second.eval_fn);
+}
+
+void test_dff_basic() {
+    std::cout << "\n--- Sequential: DFF basic ---\n";
+
+    auto chip = make_seq_builtin("DFF");
+    check(chip != nullptr, "DFF chip created");
+    check(chip->is_clocked(), "DFF is clocked");
+
+    // Initially out = 0
+    chip->eval();
+    check(chip->get_pin("out") == 0, "DFF initial out=0");
+
+    // Set in=1, tick, tock => out should become 1
+    chip->set_pin("in", 1);
+    chip->tick();
+    // After tick, out should still be 0 (not committed yet)
+    check(chip->get_pin("out") == 0, "DFF after tick, out still 0");
+    chip->tock();
+    check(chip->get_pin("out") == 1, "DFF after tock, out=1");
+
+    // Set in=0, tick, tock => out should become 0
+    chip->set_pin("in", 0);
+    chip->tick();
+    check(chip->get_pin("out") == 1, "DFF after second tick, out still 1");
+    chip->tock();
+    check(chip->get_pin("out") == 0, "DFF after second tock, out=0");
+}
+
+void test_dff_multiple_cycles() {
+    std::cout << "\n--- Sequential: DFF multiple cycles ---\n";
+
+    auto chip = make_seq_builtin("DFF");
+
+    // Verify out[t+1] = in[t] behavior over several cycles
+    int inputs[] = {1, 0, 1, 1, 0};
+    int expected_after_tock[] = {1, 0, 1, 1, 0};
+
+    for (int i = 0; i < 5; i++) {
+        chip->set_pin("in", inputs[i]);
+        chip->tick();
+        chip->tock();
+        check(chip->get_pin("out") == expected_after_tock[i],
+              "DFF cycle " + std::to_string(i) + " out=" +
+              std::to_string(expected_after_tock[i]));
+    }
+}
+
+void test_bit_register() {
+    std::cout << "\n--- Sequential: Bit ---\n";
+
+    auto chip = make_seq_builtin("Bit");
+    check(chip != nullptr, "Bit chip created");
+    check(chip->is_clocked(), "Bit is clocked");
+
+    // Initial out=0
+    chip->eval();
+    check(chip->get_pin("out") == 0, "Bit initial out=0");
+
+    // load=0, in=1 => out stays 0
+    chip->set_pin("in", 1);
+    chip->set_pin("load", 0);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 0, "Bit load=0, out stays 0");
+
+    // load=1, in=1 => out becomes 1
+    chip->set_pin("in", 1);
+    chip->set_pin("load", 1);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 1, "Bit load=1, in=1, out=1");
+
+    // load=0 => out holds
+    chip->set_pin("in", 0);
+    chip->set_pin("load", 0);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 1, "Bit load=0, out holds 1");
+
+    // load=1, in=0 => out becomes 0
+    chip->set_pin("load", 1);
+    chip->set_pin("in", 0);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 0, "Bit load=1, in=0, out=0");
+}
+
+void test_register() {
+    std::cout << "\n--- Sequential: Register ---\n";
+
+    auto chip = make_seq_builtin("Register");
+    check(chip != nullptr, "Register chip created");
+
+    // Initial out=0
+    chip->eval();
+    check(chip->get_pin("out") == 0, "Register initial out=0");
+
+    // Store 12345
+    chip->set_pin("in", 12345);
+    chip->set_pin("load", 1);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 12345, "Register stores 12345");
+
+    // Hold
+    chip->set_pin("in", 99);
+    chip->set_pin("load", 0);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 12345, "Register holds 12345");
+
+    // Store 0xABCD
+    chip->set_pin("in", 0xABCD);
+    chip->set_pin("load", 1);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 0xABCD, "Register stores 0xABCD");
+}
+
+void test_ram8() {
+    std::cout << "\n--- Sequential: RAM8 ---\n";
+
+    auto chip = make_seq_builtin("RAM8");
+    check(chip != nullptr, "RAM8 chip created");
+
+    // Write 42 at address 3
+    chip->set_pin("in", 42);
+    chip->set_pin("load", 1);
+    chip->set_pin("address", 3);
+    chip->tick();
+    chip->tock();
+
+    // Read back from address 3
+    chip->set_pin("load", 0);
+    chip->set_pin("address", 3);
+    chip->eval();
+    check(chip->get_pin("out") == 42, "RAM8 read addr=3 => 42");
+
+    // Read from address 0 (should be 0)
+    chip->set_pin("address", 0);
+    chip->eval();
+    check(chip->get_pin("out") == 0, "RAM8 read addr=0 => 0");
+
+    // Write 100 at address 7
+    chip->set_pin("in", 100);
+    chip->set_pin("load", 1);
+    chip->set_pin("address", 7);
+    chip->tick();
+    chip->tock();
+
+    // Verify both values
+    chip->set_pin("load", 0);
+    chip->set_pin("address", 3);
+    chip->eval();
+    check(chip->get_pin("out") == 42, "RAM8 addr=3 still 42");
+
+    chip->set_pin("address", 7);
+    chip->eval();
+    check(chip->get_pin("out") == 100, "RAM8 addr=7 => 100");
+}
+
+void test_ram64() {
+    std::cout << "\n--- Sequential: RAM64 ---\n";
+
+    auto chip = make_seq_builtin("RAM64");
+    check(chip != nullptr, "RAM64 chip created");
+
+    // Write to various addresses
+    for (int i = 0; i < 8; i++) {
+        chip->set_pin("in", (i + 1) * 111);
+        chip->set_pin("load", 1);
+        chip->set_pin("address", i * 8);
+        chip->tick();
+        chip->tock();
+    }
+
+    // Read back
+    chip->set_pin("load", 0);
+    for (int i = 0; i < 8; i++) {
+        chip->set_pin("address", i * 8);
+        chip->eval();
+        check(chip->get_pin("out") == (i + 1) * 111,
+              "RAM64 addr=" + std::to_string(i * 8) + " => " +
+              std::to_string((i + 1) * 111));
+    }
+}
+
+void test_ram512() {
+    std::cout << "\n--- Sequential: RAM512 ---\n";
+
+    auto chip = make_seq_builtin("RAM512");
+    check(chip != nullptr, "RAM512 chip created");
+
+    chip->set_pin("in", 999);
+    chip->set_pin("load", 1);
+    chip->set_pin("address", 511);
+    chip->tick();
+    chip->tock();
+
+    chip->set_pin("load", 0);
+    chip->set_pin("address", 511);
+    chip->eval();
+    check(chip->get_pin("out") == 999, "RAM512 addr=511 => 999");
+
+    chip->set_pin("address", 0);
+    chip->eval();
+    check(chip->get_pin("out") == 0, "RAM512 addr=0 => 0");
+}
+
+void test_ram4k() {
+    std::cout << "\n--- Sequential: RAM4K ---\n";
+
+    auto chip = make_seq_builtin("RAM4K");
+    check(chip != nullptr, "RAM4K chip created");
+
+    chip->set_pin("in", 0x1234);
+    chip->set_pin("load", 1);
+    chip->set_pin("address", 4095);
+    chip->tick();
+    chip->tock();
+
+    chip->set_pin("load", 0);
+    chip->set_pin("address", 4095);
+    chip->eval();
+    check(chip->get_pin("out") == 0x1234, "RAM4K addr=4095 => 0x1234");
+}
+
+void test_ram16k() {
+    std::cout << "\n--- Sequential: RAM16K ---\n";
+
+    auto chip = make_seq_builtin("RAM16K");
+    check(chip != nullptr, "RAM16K chip created");
+
+    chip->set_pin("in", 0xBEEF);
+    chip->set_pin("load", 1);
+    chip->set_pin("address", 16383);
+    chip->tick();
+    chip->tock();
+
+    chip->set_pin("load", 0);
+    chip->set_pin("address", 16383);
+    chip->eval();
+    check(chip->get_pin("out") == 0xBEEF, "RAM16K addr=16383 => 0xBEEF");
+
+    chip->set_pin("address", 0);
+    chip->eval();
+    check(chip->get_pin("out") == 0, "RAM16K addr=0 => 0");
+}
+
+void test_pc() {
+    std::cout << "\n--- Sequential: PC ---\n";
+
+    auto chip = make_seq_builtin("PC");
+    check(chip != nullptr, "PC chip created");
+
+    // Initial out=0
+    chip->eval();
+    check(chip->get_pin("out") == 0, "PC initial out=0");
+
+    // inc: out goes 0 -> 1 -> 2
+    chip->set_pin("inc", 1);
+    chip->set_pin("load", 0);
+    chip->set_pin("reset", 0);
+    chip->set_pin("in", 0);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 1, "PC inc: 0->1");
+
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 2, "PC inc: 1->2");
+
+    // load overrides inc
+    chip->set_pin("in", 100);
+    chip->set_pin("load", 1);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 100, "PC load=100");
+
+    // inc continues from loaded value
+    chip->set_pin("load", 0);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 101, "PC inc from 100->101");
+
+    // reset overrides everything
+    chip->set_pin("reset", 1);
+    chip->set_pin("load", 1);
+    chip->set_pin("in", 999);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 0, "PC reset overrides load");
+
+    // After reset=0, inc=1
+    chip->set_pin("reset", 0);
+    chip->set_pin("load", 0);
+    chip->tick();
+    chip->tock();
+    check(chip->get_pin("out") == 1, "PC inc after reset: 0->1");
+}
+
+void test_tst_tick_tock() {
+    std::cout << "\n--- TstRunner: tick/tock ---\n";
+
+    HDLEngine engine;
+    std::string tst = R"(
+        load DFF.hdl;
+        output-list time%S1.4.1 in%B1.1.1 out%B1.1.1;
+
+        set in 0, tick, output;
+        tock, output;
+
+        set in 1, tick, output;
+        tock, output;
+
+        set in 0, tick, output;
+        tock, output;
+    )";
+
+    std::string cmp =
+        "| time |in |out|\n"
+        "|   0+ | 0 | 0 |\n"
+        "|    1 | 0 | 0 |\n"
+        "|   1+ | 1 | 0 |\n"
+        "|    2 | 1 | 1 |\n"
+        "|   2+ | 0 | 1 |\n"
+        "|    3 | 0 | 0 |\n";
+
+    auto state = engine.run_test_string(tst, cmp);
+    if (engine.has_comparison_error()) {
+        std::cout << "  Error: " << engine.get_error_message() << std::endl;
+        std::cout << "  Output:\n" << engine.get_output_table() << std::endl;
+    }
+    check(!engine.has_comparison_error(), "DFF tick/tock test passes comparison");
+    check(state == HDLState::HALTED, "DFF test halted successfully");
+}
+
+void test_tst_bit_sequential() {
+    std::cout << "\n--- TstRunner: Bit sequential ---\n";
+
+    HDLEngine engine;
+    std::string tst = R"(
+        load Bit.hdl;
+        output-list in%B1.1.1 out%B1.1.1;
+
+        set in 0, set load 0, tick, tock, output;
+        set in 1, set load 1, tick, tock, output;
+        set in 0, set load 0, tick, tock, output;
+    )";
+
+    auto state = engine.run_test_string(tst);
+    check(state == HDLState::HALTED, "Bit test halted successfully");
+
+    // Verify output contains expected values
+    std::string out = engine.get_output_table();
+    check(out.find("| 0 | 0 |") != std::string::npos, "Bit: initial 0,0");
+    check(out.find("| 1 | 1 |") != std::string::npos, "Bit: loaded 1");
+    check(out.find("| 0 | 1 |") != std::string::npos, "Bit: holds 1");
+}
+
+void test_tst_ram8_sequential() {
+    std::cout << "\n--- TstRunner: RAM8 sequential ---\n";
+
+    HDLEngine engine;
+    std::string tst = R"(
+        load RAM8.hdl;
+        output-list out%D1.6.1;
+
+        set in 11, set load 1, set address 0, tick, tock, output;
+        set in 22, set load 1, set address 1, tick, tock, output;
+        set load 0, set address 0, eval, output;
+        set address 1, eval, output;
+    )";
+
+    auto state = engine.run_test_string(tst);
+    check(state == HDLState::HALTED, "RAM8 test halted successfully");
+
+    std::string out = engine.get_output_table();
+    // Lines should show: 11, 22, 11, 22
+    size_t pos = 0;
+    int expected[] = {11, 22, 11, 22};
+    for (int exp : expected) {
+        std::string val = std::to_string(exp);
+        pos = out.find(val, pos);
+        check(pos != std::string::npos,
+              "RAM8 output contains " + val);
+        if (pos != std::string::npos) pos += val.size();
+    }
+}
+
+void test_tst_pc_sequential() {
+    std::cout << "\n--- TstRunner: PC sequential ---\n";
+
+    HDLEngine engine;
+    std::string tst = R"(
+        load PC.hdl;
+        output-list out%D1.6.1;
+
+        set in 0, set load 0, set inc 0, set reset 0, tick, tock, output;
+        set inc 1, tick, tock, output;
+        tick, tock, output;
+        set in 100, set load 1, tick, tock, output;
+        set load 0, tick, tock, output;
+        set reset 1, tick, tock, output;
+    )";
+
+    auto state = engine.run_test_string(tst);
+    check(state == HDLState::HALTED, "PC test halted successfully");
+
+    std::string out = engine.get_output_table();
+    // Expected outputs in order: 0, 1, 2, 100, 101, 0
+    check(out.find("     0") != std::string::npos, "PC: initial 0");
+    check(out.find("     1") != std::string::npos, "PC: inc to 1");
+    check(out.find("     2") != std::string::npos, "PC: inc to 2");
+    check(out.find("   100") != std::string::npos, "PC: load 100");
+    check(out.find("   101") != std::string::npos, "PC: inc to 101");
+}
+
+void test_engine_tick_tock() {
+    std::cout << "\n--- HDLEngine: tick/tock API ---\n";
+
+    HDLEngine engine;
+    engine.load_hdl_string(R"(
+        CHIP DFF {
+            IN in;
+            OUT out;
+            BUILTIN DFF;
+        }
+    )");
+    check(engine.get_state() != HDLState::ERROR, "DFF loaded via engine");
+
+    engine.set_input("in", 1);
+    engine.tick();
+    check(engine.get_output("out") == 0, "Engine tick: out still 0");
+    engine.tock();
+    check(engine.get_output("out") == 1, "Engine tock: out=1");
+
+    engine.set_input("in", 0);
+    engine.tick();
+    engine.tock();
+    check(engine.get_output("out") == 0, "Engine second cycle: out=0");
+}
+
+void test_composite_bit_from_dff_mux() {
+    std::cout << "\n--- Composite: Bit from DFF+Mux ---\n";
+
+    HDLEngine engine;
+    engine.load_hdl_string(R"(
+        CHIP MyBit {
+            IN in, load;
+            OUT out;
+            PARTS:
+            Mux(a=dffOut, b=in, sel=load, out=muxOut);
+            DFF(in=muxOut, out=dffOut);
+            Or(a=dffOut, b=false, out=out);
+        }
+    )");
+    check(engine.get_state() != HDLState::ERROR, "MyBit chip loaded");
+
+    // Initial out=0
+    engine.eval();
+    check(engine.get_output("out") == 0, "MyBit initial out=0");
+
+    // load=0, in=1 => hold
+    engine.set_input("in", 1);
+    engine.set_input("load", 0);
+    engine.tick();
+    engine.tock();
+    check(engine.get_output("out") == 0, "MyBit load=0 holds 0");
+
+    // load=1, in=1 => store
+    engine.set_input("in", 1);
+    engine.set_input("load", 1);
+    engine.tick();
+    engine.tock();
+    check(engine.get_output("out") == 1, "MyBit load=1, in=1 => out=1");
+
+    // load=0 => hold
+    engine.set_input("in", 0);
+    engine.set_input("load", 0);
+    engine.tick();
+    engine.tock();
+    check(engine.get_output("out") == 1, "MyBit load=0 holds 1");
+}
+
+// ==============================================================================
 // Main
 // ==============================================================================
 
@@ -887,6 +1387,30 @@ int main() {
     test_error_unknown_chip();
     test_error_unknown_pin();
     test_error_bad_hdl();
+
+    // Sequential chip tests (Phase 2)
+    test_dff_basic();
+    test_dff_multiple_cycles();
+    test_bit_register();
+    test_register();
+    test_ram8();
+    test_ram64();
+    test_ram512();
+    test_ram4k();
+    test_ram16k();
+    test_pc();
+
+    // TST tick/tock tests
+    test_tst_tick_tock();
+    test_tst_bit_sequential();
+    test_tst_ram8_sequential();
+    test_tst_pc_sequential();
+
+    // Engine tick/tock API
+    test_engine_tick_tock();
+
+    // Composite sequential
+    test_composite_bit_from_dff_mux();
 
     std::cout << "\n==================================================\n";
     std::cout << "Results: " << pass_count << "/" << test_count << " passed\n";

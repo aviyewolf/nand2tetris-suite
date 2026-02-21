@@ -21,6 +21,17 @@ HDLChip::HDLChip(const HDLChipDef& def, std::function<void(HDLChip&)> eval_fn)
     init_pins();
 }
 
+HDLChip::HDLChip(const HDLChipDef& def,
+                 std::function<void(HDLChip&)> eval_fn,
+                 std::function<void(HDLChip&)> tick_fn,
+                 std::function<void(HDLChip&)> tock_fn)
+    : def_(def), builtin_eval_(std::move(eval_fn)),
+      builtin_tick_(std::move(tick_fn)), builtin_tock_(std::move(tock_fn))
+{
+    init_pins();
+    is_dff_ = (def.name == "DFF");
+}
+
 HDLChip::HDLChip(const HDLChipDef& def, const ChipResolver& resolver)
     : def_(def)
 {
@@ -91,6 +102,9 @@ void HDLChip::reset() {
     for (auto& [name, val] : pins_) {
         val = 0;
     }
+    dff_next_ = 0;
+    dff_state_ = 0;
+    chip_state_.reset();
     for (auto& sub : sub_chips_) {
         sub->reset();
     }
@@ -110,6 +124,66 @@ void HDLChip::eval() {
     for (size_t idx : eval_order_) {
         propagate_inputs(idx);
         sub_chips_[idx]->eval();
+        collect_outputs(idx);
+    }
+}
+
+// ==============================================================================
+// Clock: tick / tock
+// ==============================================================================
+
+bool HDLChip::is_sub_clocked(size_t part_index) const {
+    const auto& sub = sub_chips_[part_index];
+    return sub->is_clocked();
+}
+
+bool HDLChip::is_clocked() const {
+    if (is_dff_) return true;
+    if (builtin_tick_ || builtin_tock_) return true;
+    for (const auto& sub : sub_chips_) {
+        if (sub->is_clocked()) return true;
+    }
+    return false;
+}
+
+void HDLChip::tick() {
+    if (builtin_tick_) {
+        builtin_tick_(*this);
+        return;
+    }
+
+    // User-defined chip: propagate inputs, tick each sub-chip in eval order
+    for (size_t idx : eval_order_) {
+        propagate_inputs(idx);
+        if (sub_chips_[idx]->is_clocked()) {
+            sub_chips_[idx]->tick();
+        } else {
+            sub_chips_[idx]->eval();
+        }
+        collect_outputs(idx);
+    }
+}
+
+void HDLChip::tock() {
+    if (builtin_tock_) {
+        builtin_tock_(*this);
+        return;
+    }
+
+    // User-defined chip: tock each clocked sub-chip, then re-propagate
+    for (size_t idx : eval_order_) {
+        if (sub_chips_[idx]->is_clocked()) {
+            sub_chips_[idx]->tock();
+            collect_outputs(idx);
+        }
+    }
+
+    // Re-propagate combinational logic with new DFF outputs
+    for (size_t idx : eval_order_) {
+        propagate_inputs(idx);
+        if (!sub_chips_[idx]->is_clocked()) {
+            sub_chips_[idx]->eval();
+        }
         collect_outputs(idx);
     }
 }
@@ -220,6 +294,10 @@ void HDLChip::compute_eval_order() {
     std::vector<std::set<std::string>> part_inputs(n);
 
     for (const auto& m : output_mappings_) {
+        // Skip outputs from clocked sub-chips — their outputs are driven by
+        // state (tock), not current combinational inputs, so they don't create
+        // combinational dependencies.
+        if (is_sub_clocked(m.part_index)) continue;
         part_outputs[m.part_index].insert(m.chip_pin);
     }
     for (const auto& m : input_mappings_) {

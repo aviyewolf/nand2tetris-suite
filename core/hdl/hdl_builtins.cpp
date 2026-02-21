@@ -5,6 +5,8 @@
 #include "hdl_builtins.hpp"
 #include "hdl_chip.hpp"
 #include <cstdint>
+#include <vector>
+#include <any>
 
 namespace n2t {
 
@@ -238,6 +240,210 @@ void eval_ALU(HDLChip& chip) {
 }
 
 // ==============================================================================
+// Sequential Chips
+// ==============================================================================
+
+// --- DFF ---
+// out[t+1] = in[t]
+void eval_DFF(HDLChip& chip) {
+    // eval just reflects current DFF state to out
+    chip.set_pin("out", chip.get_dff_state());
+}
+
+void tick_DFF(HDLChip& chip) {
+    // Rising edge: sample input
+    chip.set_dff_next(chip.get_pin("in"));
+}
+
+void tock_DFF(HDLChip& chip) {
+    // Falling edge: commit sampled input to state and update out
+    chip.set_dff_state(chip.get_dff_next());
+    chip.set_pin("out", chip.get_dff_state());
+}
+
+// --- RAM state helper ---
+struct RAMState {
+    std::vector<int64_t> memory;
+    int64_t pending_value = 0;
+    int64_t pending_address = 0;
+    bool pending_write = false;
+
+    explicit RAMState(size_t size) : memory(size, 0) {}
+};
+
+static RAMState& get_ram_state(HDLChip& chip, size_t size) {
+    if (!chip.chip_state_.has_value()) {
+        chip.chip_state_ = RAMState(size);
+    }
+    return std::any_cast<RAMState&>(chip.chip_state_);
+}
+
+// --- Bit (1-bit register) ---
+// if load[t] then out[t+1] = in[t] else out[t+1] = out[t]
+struct BitState {
+    int64_t value = 0;
+    int64_t pending = 0;
+    bool pending_load = false;
+};
+
+static BitState& get_bit_state(HDLChip& chip) {
+    if (!chip.chip_state_.has_value()) {
+        chip.chip_state_ = BitState{};
+    }
+    return std::any_cast<BitState&>(chip.chip_state_);
+}
+
+void eval_Bit(HDLChip& chip) {
+    auto& st = get_bit_state(chip);
+    chip.set_pin("out", st.value);
+}
+
+void tick_Bit(HDLChip& chip) {
+    auto& st = get_bit_state(chip);
+    st.pending = chip.get_pin("in");
+    st.pending_load = (chip.get_pin("load") != 0);
+}
+
+void tock_Bit(HDLChip& chip) {
+    auto& st = get_bit_state(chip);
+    if (st.pending_load) {
+        st.value = st.pending & 1;
+    }
+    chip.set_pin("out", st.value);
+}
+
+// --- Register (16-bit) ---
+struct RegisterState {
+    int64_t value = 0;
+    int64_t pending = 0;
+    bool pending_load = false;
+};
+
+static RegisterState& get_register_state(HDLChip& chip) {
+    if (!chip.chip_state_.has_value()) {
+        chip.chip_state_ = RegisterState{};
+    }
+    return std::any_cast<RegisterState&>(chip.chip_state_);
+}
+
+void eval_Register(HDLChip& chip) {
+    auto& st = get_register_state(chip);
+    chip.set_pin("out", st.value);
+}
+
+void tick_Register(HDLChip& chip) {
+    auto& st = get_register_state(chip);
+    st.pending = chip.get_pin("in") & 0xFFFF;
+    st.pending_load = (chip.get_pin("load") != 0);
+}
+
+void tock_Register(HDLChip& chip) {
+    auto& st = get_register_state(chip);
+    if (st.pending_load) {
+        st.value = st.pending;
+    }
+    chip.set_pin("out", st.value);
+}
+
+// --- Generic RAM eval/tick/tock ---
+template<size_t SIZE, int ADDR_BITS>
+void eval_RAM(HDLChip& chip) {
+    auto& st = get_ram_state(chip, SIZE);
+    int64_t address = chip.get_pin("address") & ((1 << ADDR_BITS) - 1);
+    chip.set_pin("out", st.memory[static_cast<size_t>(address)]);
+}
+
+template<size_t SIZE, int ADDR_BITS>
+void tick_RAM(HDLChip& chip) {
+    auto& st = get_ram_state(chip, SIZE);
+    st.pending_address = chip.get_pin("address") & ((1 << ADDR_BITS) - 1);
+    st.pending_value = chip.get_pin("in") & 0xFFFF;
+    st.pending_write = (chip.get_pin("load") != 0);
+}
+
+template<size_t SIZE, int ADDR_BITS>
+void tock_RAM(HDLChip& chip) {
+    auto& st = get_ram_state(chip, SIZE);
+    if (st.pending_write) {
+        st.memory[static_cast<size_t>(st.pending_address)] = st.pending_value;
+    }
+    int64_t address = chip.get_pin("address") & ((1 << ADDR_BITS) - 1);
+    chip.set_pin("out", st.memory[static_cast<size_t>(address)]);
+}
+
+// RAM8
+void eval_RAM8(HDLChip& chip) { eval_RAM<8, 3>(chip); }
+void tick_RAM8(HDLChip& chip) { tick_RAM<8, 3>(chip); }
+void tock_RAM8(HDLChip& chip) { tock_RAM<8, 3>(chip); }
+
+// RAM64
+void eval_RAM64(HDLChip& chip) { eval_RAM<64, 6>(chip); }
+void tick_RAM64(HDLChip& chip) { tick_RAM<64, 6>(chip); }
+void tock_RAM64(HDLChip& chip) { tock_RAM<64, 6>(chip); }
+
+// RAM512
+void eval_RAM512(HDLChip& chip) { eval_RAM<512, 9>(chip); }
+void tick_RAM512(HDLChip& chip) { tick_RAM<512, 9>(chip); }
+void tock_RAM512(HDLChip& chip) { tock_RAM<512, 9>(chip); }
+
+// RAM4K
+void eval_RAM4K(HDLChip& chip) { eval_RAM<4096, 12>(chip); }
+void tick_RAM4K(HDLChip& chip) { tick_RAM<4096, 12>(chip); }
+void tock_RAM4K(HDLChip& chip) { tock_RAM<4096, 12>(chip); }
+
+// RAM16K
+void eval_RAM16K(HDLChip& chip) { eval_RAM<16384, 14>(chip); }
+void tick_RAM16K(HDLChip& chip) { tick_RAM<16384, 14>(chip); }
+void tock_RAM16K(HDLChip& chip) { tock_RAM<16384, 14>(chip); }
+
+// --- PC (Program Counter) ---
+// Priority: reset > load > inc > hold
+// out[t+1] = 0        if reset[t]
+// out[t+1] = in[t]    if load[t]
+// out[t+1] = out[t]+1 if inc[t]
+// out[t+1] = out[t]   otherwise
+struct PCState {
+    int64_t value = 0;
+    int64_t pending = 0;
+};
+
+static PCState& get_pc_state(HDLChip& chip) {
+    if (!chip.chip_state_.has_value()) {
+        chip.chip_state_ = PCState{};
+    }
+    return std::any_cast<PCState&>(chip.chip_state_);
+}
+
+void eval_PC(HDLChip& chip) {
+    auto& st = get_pc_state(chip);
+    chip.set_pin("out", st.value);
+}
+
+void tick_PC(HDLChip& chip) {
+    auto& st = get_pc_state(chip);
+    int64_t reset = chip.get_pin("reset");
+    int64_t load = chip.get_pin("load");
+    int64_t inc = chip.get_pin("inc");
+    int64_t in = chip.get_pin("in") & 0xFFFF;
+
+    if (reset) {
+        st.pending = 0;
+    } else if (load) {
+        st.pending = in;
+    } else if (inc) {
+        st.pending = (st.value + 1) & 0xFFFF;
+    } else {
+        st.pending = st.value;
+    }
+}
+
+void tock_PC(HDLChip& chip) {
+    auto& st = get_pc_state(chip);
+    st.value = st.pending;
+    chip.set_pin("out", st.value);
+}
+
+// ==============================================================================
 // Registry
 // ==============================================================================
 
@@ -248,12 +454,24 @@ const std::unordered_map<std::string, BuiltinInfo>& get_builtin_registry() {
     if (!initialized) {
         initialized = true;
 
+        // Helper for combinational chips (no tick/tock)
         auto add = [&](const std::string& name,
                        std::vector<HDLPort> inputs,
                        std::vector<HDLPort> outputs,
                        std::function<void(HDLChip&)> fn) {
             registry[name] = {make_def(name, std::move(inputs), std::move(outputs)),
-                              std::move(fn)};
+                              std::move(fn), nullptr, nullptr};
+        };
+
+        // Helper for sequential chips (with tick/tock)
+        auto add_seq = [&](const std::string& name,
+                           std::vector<HDLPort> inputs,
+                           std::vector<HDLPort> outputs,
+                           std::function<void(HDLChip&)> eval,
+                           std::function<void(HDLChip&)> tick,
+                           std::function<void(HDLChip&)> tock) {
+            registry[name] = {make_def(name, std::move(inputs), std::move(outputs)),
+                              std::move(eval), std::move(tick), std::move(tock)};
         };
 
         // Primitive
@@ -299,6 +517,36 @@ const std::unordered_map<std::string, BuiltinInfo>& get_builtin_registry() {
                      pin1("zx"), pin1("nx"), pin1("zy"), pin1("ny"),
                      pin1("f"), pin1("no")},
             {pin16("out"), pin1("zr"), pin1("ng")}, eval_ALU);
+
+        // =============== Sequential chips ===============
+
+        // DFF primitive
+        add_seq("DFF", {pin1("in")}, {pin1("out")},
+                eval_DFF, tick_DFF, tock_DFF);
+
+        // Bit (1-bit register)
+        add_seq("Bit", {pin1("in"), pin1("load")}, {pin1("out")},
+                eval_Bit, tick_Bit, tock_Bit);
+
+        // Register (16-bit)
+        add_seq("Register", {pin16("in"), pin1("load")}, {pin16("out")},
+                eval_Register, tick_Register, tock_Register);
+
+        // RAM chips
+        add_seq("RAM8", {pin16("in"), pin1("load"), {("address"), 3}}, {pin16("out")},
+                eval_RAM8, tick_RAM8, tock_RAM8);
+        add_seq("RAM64", {pin16("in"), pin1("load"), {("address"), 6}}, {pin16("out")},
+                eval_RAM64, tick_RAM64, tock_RAM64);
+        add_seq("RAM512", {pin16("in"), pin1("load"), {("address"), 9}}, {pin16("out")},
+                eval_RAM512, tick_RAM512, tock_RAM512);
+        add_seq("RAM4K", {pin16("in"), pin1("load"), {("address"), 12}}, {pin16("out")},
+                eval_RAM4K, tick_RAM4K, tock_RAM4K);
+        add_seq("RAM16K", {pin16("in"), pin1("load"), {("address"), 14}}, {pin16("out")},
+                eval_RAM16K, tick_RAM16K, tock_RAM16K);
+
+        // PC (Program Counter)
+        add_seq("PC", {pin16("in"), pin1("load"), pin1("inc"), pin1("reset")}, {pin16("out")},
+                eval_PC, tick_PC, tock_PC);
     }
 
     return registry;

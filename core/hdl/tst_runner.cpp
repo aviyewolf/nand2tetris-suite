@@ -23,6 +23,8 @@ void TstRunner::parse(const std::string& source, const std::string& name) {
     output_.clear();
     output_row_ = 0;
     comparison_error_.clear();
+    clock_cycle_ = 0;
+    in_tick_phase_ = false;
     parse_commands(source, name);
 }
 
@@ -125,6 +127,10 @@ void TstRunner::parse_commands(const std::string& source, const std::string& nam
                     cmd.arg2 = trim(val);
                 } else if (keyword == "eval") {
                     cmd.type = TstCommandType::EVAL;
+                } else if (keyword == "tick") {
+                    cmd.type = TstCommandType::TICK;
+                } else if (keyword == "tock") {
+                    cmd.type = TstCommandType::TOCK;
                 } else if (keyword == "output") {
                     cmd.type = TstCommandType::OUTPUT;
                 } else {
@@ -216,6 +222,8 @@ void TstRunner::reset() {
     output_.clear();
     output_row_ = 0;
     comparison_error_.clear();
+    clock_cycle_ = 0;
+    in_tick_phase_ = false;
     if (chip_) chip_->reset();
 }
 
@@ -255,6 +263,12 @@ void TstRunner::execute(const TstCommand& cmd) {
             break;
         case TstCommandType::EVAL:
             do_eval();
+            break;
+        case TstCommandType::TICK:
+            do_tick();
+            break;
+        case TstCommandType::TOCK:
+            do_tock();
             break;
         case TstCommandType::OUTPUT:
             do_output();
@@ -304,6 +318,23 @@ void TstRunner::do_eval() {
     chip_->eval();
 }
 
+void TstRunner::do_tick() {
+    if (!chip_) {
+        throw RuntimeError("No chip loaded");
+    }
+    in_tick_phase_ = true;
+    chip_->tick();
+}
+
+void TstRunner::do_tock() {
+    if (!chip_) {
+        throw RuntimeError("No chip loaded");
+    }
+    in_tick_phase_ = false;
+    clock_cycle_++;
+    chip_->tock();
+}
+
 void TstRunner::do_output() {
     if (!chip_) {
         throw RuntimeError("No chip loaded");
@@ -311,6 +342,26 @@ void TstRunner::do_output() {
 
     std::string row = "|";
     for (const auto& col : output_columns_) {
+        // Handle 'time' pseudo-pin
+        if (col.pin_name == "time") {
+            std::string time_str;
+            if (in_tick_phase_) {
+                time_str = std::to_string(clock_cycle_) + "+";
+            } else {
+                time_str = std::to_string(clock_cycle_);
+            }
+            // Right-justify within width, apply padding
+            int total_width = col.width;
+            while (static_cast<int>(time_str.size()) < total_width) {
+                time_str = " " + time_str;
+            }
+            row += std::string(static_cast<size_t>(col.left_pad), ' ');
+            row += time_str;
+            row += std::string(static_cast<size_t>(col.right_pad), ' ');
+            row += "|";
+            continue;
+        }
+
         // Check for sub-bus in pin name
         int64_t val;
         auto bracket = col.pin_name.find('[');

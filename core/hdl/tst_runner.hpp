@@ -28,7 +28,7 @@ struct OutputColumn {
 // TST command types
 enum class TstCommandType {
     LOAD, OUTPUT_FILE, COMPARE_TO, OUTPUT_LIST,
-    SET, EVAL, OUTPUT
+    SET, EVAL, OUTPUT, TICK, TOCK
 };
 
 struct TstCommand {
@@ -82,6 +82,8 @@ private:
     void do_load(const std::string& chip_name);
     void do_set(const std::string& pin, const std::string& value);
     void do_eval();
+    void do_tick();
+    void do_tock();
     void do_output();
     void compare_output();
 
@@ -103,6 +105,10 @@ private:
     size_t output_row_ = 0;
     std::string comparison_error_;
     std::string script_name_;
+
+    // Clock state
+    int clock_cycle_ = 0;
+    bool in_tick_phase_ = false;
 };
 
 }  // namespace n2t

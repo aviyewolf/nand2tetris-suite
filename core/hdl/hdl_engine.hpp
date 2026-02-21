@@ -46,6 +46,8 @@ public:
     void set_input(const std::string& pin, int64_t value);
     int64_t get_output(const std::string& pin) const;
     void eval();
+    void tick();
+    void tock();
 
     // Test script execution
     HDLState run_test_string(const std::string& tst, const std::string& cmp = "",

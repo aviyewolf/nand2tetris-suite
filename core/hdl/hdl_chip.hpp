@@ -4,6 +4,7 @@
 // Runtime chip instances with pin storage, evaluation, and bus operations.
 // Supports both built-in chips (eval callback) and user-defined chips
 // (sub-chip instances evaluated in topological order).
+// Supports sequential chips with tick/tock clock phases.
 // ==============================================================================
 
 #ifndef NAND2TETRIS_HDL_CHIP_HPP
@@ -15,6 +16,7 @@
 #include <string>
 #include <functional>
 #include <memory>
+#include <any>
 
 namespace n2t {
 
@@ -28,6 +30,12 @@ public:
     // Construct a built-in chip
     HDLChip(const HDLChipDef& def, std::function<void(HDLChip&)> eval_fn);
 
+    // Construct a built-in chip with tick/tock support
+    HDLChip(const HDLChipDef& def,
+            std::function<void(HDLChip&)> eval_fn,
+            std::function<void(HDLChip&)> tick_fn,
+            std::function<void(HDLChip&)> tock_fn);
+
     // Construct a user-defined chip from its definition, resolving sub-parts
     HDLChip(const HDLChipDef& def, const ChipResolver& resolver);
 
@@ -39,8 +47,13 @@ public:
     int64_t get_pin_bits(const std::string& name, int lo, int hi) const;
     void set_pin_bits(const std::string& name, int lo, int hi, int64_t value);
 
-    // Evaluate the chip
+    // Evaluate the chip (combinational only)
     void eval();
+
+    // Clock phases (sequential)
+    void tick();                    // rising edge
+    void tock();                    // falling edge
+    bool is_clocked() const;       // has DFF/sequential in hierarchy
 
     // Get chip definition
     const HDLChipDef& get_def() const { return def_; }
@@ -51,6 +64,16 @@ public:
     // Reset all pins to 0
     void reset();
 
+    // Per-instance state for RAM builtins
+    std::any chip_state_;
+
+    // DFF state (dedicated fields for the DFF primitive)
+    bool is_dff() const { return is_dff_; }
+    int64_t get_dff_state() const { return dff_state_; }
+    void set_dff_next(int64_t v) { dff_next_ = v; }
+    int64_t get_dff_next() const { return dff_next_; }
+    void set_dff_state(int64_t v) { dff_state_ = v; }
+
 private:
     HDLChipDef def_;
     std::unordered_map<std::string, int64_t> pins_;
@@ -58,6 +81,13 @@ private:
 
     // Built-in eval
     std::function<void(HDLChip&)> builtin_eval_;
+    std::function<void(HDLChip&)> builtin_tick_;
+    std::function<void(HDLChip&)> builtin_tock_;
+
+    // DFF state
+    bool is_dff_ = false;
+    int64_t dff_next_ = 0;         // DFF input latched at tick
+    int64_t dff_state_ = 0;        // DFF output state
 
     // User-defined chip internals
     struct WireMapping {
@@ -82,6 +112,9 @@ private:
 
     bool is_chip_input(const std::string& name) const;
     bool is_chip_output(const std::string& name) const;
+
+    // Check if a sub-chip is clocked (DFF or has tick/tock)
+    bool is_sub_clocked(size_t part_index) const;
 };
 
 }  // namespace n2t

@@ -2,7 +2,8 @@
 // HDL Built-in Chips
 // ==============================================================================
 // Provides built-in implementations of all combinational chips from
-// nand2tetris projects 01-02: gates, mux/dmux, 16-bit, multi-way, ALU.
+// nand2tetris projects 01-02 and sequential chips from project 03:
+// gates, mux/dmux, 16-bit, multi-way, ALU, DFF, registers, RAM, PC.
 // ==============================================================================
 
 #ifndef NAND2TETRIS_HDL_BUILTINS_HPP
@@ -20,12 +21,14 @@ class HDLChip;
 struct BuiltinInfo {
     HDLChipDef def;
     std::function<void(HDLChip&)> eval_fn;
+    std::function<void(HDLChip&)> tick_fn;  // nullptr for combinational
+    std::function<void(HDLChip&)> tock_fn;  // nullptr for combinational
 };
 
 // Registry of all built-in chips
 const std::unordered_map<std::string, BuiltinInfo>& get_builtin_registry();
 
-// Individual eval functions (exposed for testing)
+// Combinational eval functions (exposed for testing)
 void eval_Nand(HDLChip& chip);
 void eval_Not(HDLChip& chip);
 void eval_And(HDLChip& chip);
@@ -47,6 +50,43 @@ void eval_FullAdder(HDLChip& chip);
 void eval_Add16(HDLChip& chip);
 void eval_Inc16(HDLChip& chip);
 void eval_ALU(HDLChip& chip);
+
+// Sequential eval/tick/tock functions
+void eval_DFF(HDLChip& chip);
+void tick_DFF(HDLChip& chip);
+void tock_DFF(HDLChip& chip);
+
+void eval_Bit(HDLChip& chip);
+void tick_Bit(HDLChip& chip);
+void tock_Bit(HDLChip& chip);
+
+void eval_Register(HDLChip& chip);
+void tick_Register(HDLChip& chip);
+void tock_Register(HDLChip& chip);
+
+void eval_RAM8(HDLChip& chip);
+void tick_RAM8(HDLChip& chip);
+void tock_RAM8(HDLChip& chip);
+
+void eval_RAM64(HDLChip& chip);
+void tick_RAM64(HDLChip& chip);
+void tock_RAM64(HDLChip& chip);
+
+void eval_RAM512(HDLChip& chip);
+void tick_RAM512(HDLChip& chip);
+void tock_RAM512(HDLChip& chip);
+
+void eval_RAM4K(HDLChip& chip);
+void tick_RAM4K(HDLChip& chip);
+void tock_RAM4K(HDLChip& chip);
+
+void eval_RAM16K(HDLChip& chip);
+void tick_RAM16K(HDLChip& chip);
+void tock_RAM16K(HDLChip& chip);
+
+void eval_PC(HDLChip& chip);
+void tick_PC(HDLChip& chip);
+void tock_PC(HDLChip& chip);
 
 }  // namespace n2t
 
