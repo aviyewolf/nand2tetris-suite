@@ -11,6 +11,8 @@ This suite helps students understand and debug their implementations by providin
 
 **Important**: This suite does NOT implement the course projects (assembler, VM translator, compiler). Instead, it simulates and debugs the OUTPUT that students' implementations produce.
 
+**New to this suite?** Read the [User Manual](docs/USER_MANUAL.md) for step-by-step instructions with examples.
+
 ## Architecture Overview
 
 The nand2tetris course has students build a complete computer system in layers:
@@ -162,7 +164,7 @@ nand2tetris-suite/
 │   ├── vm_engine_test.cpp      # VM emulator tests
 │   └── jack_debugger_test.cpp  # Jack debugger tests (120 tests)
 │
-├── cli/                        # Command-line tools (planned)
+├── cli/                        # Command-line tools
 ├── web/                        # Web interface (planned)
 │   ├── frontend/               # React/TypeScript UI
 │   └── wasm/                   # WebAssembly bindings
@@ -214,12 +216,12 @@ cmake --build .
 
 ### Planned
 
-- [ ] CLI tools (cpu_sim, vm_emu, jack_debug, hdl_sim)
+- [x] **CLI tools** — cpu_sim, vm_emu, hdl_sim, jack_debug (batch + interactive REPL)
 - [ ] C API bindings for language interop
 - [ ] WebAssembly compilation
 - [ ] Web frontend (React/TypeScript)
 - [ ] Example programs
-- [ ] Documentation
+- [x] **User manual** — [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)
 
 ## Design Principles
 

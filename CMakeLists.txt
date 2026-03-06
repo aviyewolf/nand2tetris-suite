@@ -78,8 +78,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         add_compile_options(
             -O3            # Maximum optimization
             -DNDEBUG       # Disable assertions
-            -march=native  # Optimize for this CPU architecture
         )
+        if(NOT EMSCRIPTEN)
+            add_compile_options(-march=native)  # Optimize for this CPU (invalid for WASM)
+        endif()
     endif()
 
     # Additional flags for Debug builds
