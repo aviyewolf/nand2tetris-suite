@@ -25,6 +25,7 @@ set in 1, eval, output;`;
 export function HdlTab() {
   const wasm = useWasm();
   const engineRef = useRef<HDLEngineType | null>(null);
+  const preparedRef = useRef(false);
 
   const [hdl, setHdl] = useState(HDL_PLACEHOLDER);
   const [tst, setTst] = useState(TST_PLACEHOLDER);
@@ -57,6 +58,7 @@ export function HdlTab() {
   const handleRunTest = useCallback(() => {
     const eng = engineRef.current;
     if (!eng) return;
+    preparedRef.current = false;
     try {
       eng.runTestString(tst, cmp);
     } catch (e) {
@@ -68,11 +70,12 @@ export function HdlTab() {
   const handleStep = useCallback(() => {
     const eng = engineRef.current;
     if (!eng) return;
-    // If engine is READY, start a new test first
-    if (eng.getState() === 0 /* READY */) {
+    // If not yet prepared, load HDL and prepare the test for stepping
+    if (!preparedRef.current) {
       try {
-        // Load HDL and prepare test but don't run
         eng.loadString(hdl);
+        eng.prepareTest(tst, cmp);
+        preparedRef.current = true;
       } catch (e) {
         setError(String(e));
         syncState();
@@ -85,12 +88,13 @@ export function HdlTab() {
       setError(String(e));
     }
     syncState();
-  }, [hdl, syncState]);
+  }, [hdl, tst, cmp, syncState]);
 
   const handleReset = useCallback(() => {
     const eng = engineRef.current;
     if (!eng) return;
     eng.reset();
+    preparedRef.current = false;
     setOutput("");
     setError("");
     setStats({ evals: 0, rows: 0 });
@@ -117,15 +121,17 @@ export function HdlTab() {
             accept=".hdl"
           />
           <Editor
-            label="Test Script / Compare"
+            label="Test Script (.tst)"
             value={tst}
             onChange={setTst}
-            accept=".tst,.cmp"
+            accept=".tst"
           />
-          {/* Hidden CMP input */}
-          <div style={{ display: "none" }}>
-            <Editor label="CMP" value={cmp} onChange={setCmp} accept=".cmp" />
-          </div>
+          <Editor
+            label="Compare (.cmp)"
+            value={cmp}
+            onChange={setCmp}
+            accept=".cmp"
+          />
         </div>
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, overflow: "hidden" }}>
           <div className="panel" style={{ flex: 1 }}>

@@ -7,6 +7,7 @@
 
 #include "hdl_engine.hpp"
 #include "error.hpp"
+#include "line_editor.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -106,13 +107,12 @@ static void interactive_mode(const std::string& hdl_path) {
     std::cout << "HDL Simulator — " << hdl_path << "\n"
               << "Type 'help' for commands.\n\n";
 
+    LineEditor editor("> ");
     std::string line;
     while (true) {
-        std::cout << "> " << std::flush;
-        if (!std::getline(std::cin, line)) {
-            std::cout << "\n";
-            break;
-        }
+        auto result = editor.read_line();
+        if (!result) break;
+        line = *result;
 
         auto args = split_args(line);
         if (args.empty()) continue;

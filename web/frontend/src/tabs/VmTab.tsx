@@ -5,6 +5,8 @@ import { Editor } from "../components/Editor";
 import { ControlBar } from "../components/ControlBar";
 import { StatusBar, stateToName } from "../components/StatusBar";
 import { RegisterDisplay } from "../components/RegisterDisplay";
+import { ScreenCanvas } from "../components/ScreenCanvas";
+import { mapKeyToHack } from "../util/keyboard";
 
 const VM_PLACEHOLDER = `// Paste or load a .vm file
 function Main.main 2
@@ -21,6 +23,7 @@ export function VmTab() {
   const wasm = useWasm();
   const engineRef = useRef<VMEngineType | null>(null);
   const runningRef = useRef(false);
+  const tabRef = useRef<HTMLDivElement>(null);
 
   const [source, setSource] = useState(VM_PLACEHOLDER);
   const [state, setState] = useState(0);
@@ -33,6 +36,7 @@ export function VmTab() {
   const [segments, setSegments] = useState<Record<string, number>>({});
   const [callStack, setCallStack] = useState<CallFrame[]>([]);
   const [instrCount, setInstrCount] = useState(0);
+  const [currentKey, setCurrentKey] = useState(0);
 
   useEffect(() => {
     const eng = new wasm.VMEngine();
@@ -42,6 +46,10 @@ export function VmTab() {
       engineRef.current = null;
     };
   }, [wasm]);
+
+  const readRam = useCallback((addr: number) => {
+    return engineRef.current?.readRam(addr) ?? 0;
+  }, []);
 
   const syncState = useCallback(() => {
     const eng = engineRef.current;
@@ -169,13 +177,42 @@ export function VmTab() {
     engineRef.current?.reset();
     setError("");
     setInstrCount(0);
+    setCurrentKey(0);
     syncState();
   }, [syncState]);
+
+  // Keyboard input
+  useEffect(() => {
+    const el = tabRef.current;
+    if (!el) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const eng = engineRef.current;
+      if (!eng) return;
+      const hackKey = mapKeyToHack(e);
+      if (hackKey !== null) {
+        eng.setKeyboard(hackKey);
+        setCurrentKey(hackKey);
+        e.preventDefault();
+      }
+    };
+    const onKeyUp = () => {
+      engineRef.current?.setKeyboard(0);
+      setCurrentKey(0);
+    };
+
+    el.addEventListener("keydown", onKeyDown);
+    el.addEventListener("keyup", onKeyUp);
+    return () => {
+      el.removeEventListener("keydown", onKeyDown);
+      el.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
 
   const stateName = stateToName(state);
 
   return (
-    <div className="tab-panel">
+    <div className="tab-panel" ref={tabRef} tabIndex={0}>
       <ControlBar
         onRun={handleRun}
         onStep={handleStep}
@@ -196,22 +233,35 @@ export function VmTab() {
           />
         </div>
 
-        {/* Middle: stack */}
-        <div className="panel" style={{ width: 180, overflow: "hidden" }}>
-          <div className="panel-header">Stack</div>
-          <div className="panel-body">
-            <div className="register-display">
-              {stack.length === 0 && (
-                <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
-                  (empty)
-                </div>
+        {/* Middle: stack + screen */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, overflow: "hidden" }}>
+          <div className="panel" style={{ width: 180, flex: 1, overflow: "hidden" }}>
+            <div className="panel-header">Stack</div>
+            <div className="panel-body">
+              <div className="register-display">
+                {stack.length === 0 && (
+                  <div style={{ color: "var(--text-dim)", fontSize: 12 }}>
+                    (empty)
+                  </div>
+                )}
+                {[...stack].reverse().map((v, i) => (
+                  <div key={i} className="register-row">
+                    <span className="reg-name">{stack.length - 1 - i + 256}</span>
+                    <span className="reg-value">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div className="panel">
+            <div className="panel-header">
+              Screen
+              {currentKey > 0 && (
+                <span className="keyboard-status">Key: {currentKey}</span>
               )}
-              {[...stack].reverse().map((v, i) => (
-                <div key={i} className="register-row">
-                  <span className="reg-name">{stack.length - 1 - i + 256}</span>
-                  <span className="reg-value">{v}</span>
-                </div>
-              ))}
+            </div>
+            <div className="panel-body" style={{ display: "flex", justifyContent: "center", padding: 4 }}>
+              <ScreenCanvas readRam={readRam} width={180} />
             </div>
           </div>
         </div>

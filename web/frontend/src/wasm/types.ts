@@ -54,6 +54,7 @@ export interface HDLEngine {
   tick(): void;
   tock(): void;
   runTestString(tst: string, cmp?: string, name?: string): HDLState;
+  prepareTest(tst: string, cmp?: string, name?: string): HDLState;
   stepTest(): HDLState;
   getOutputTable(): string;
   hasComparisonError(): boolean;
@@ -74,6 +75,15 @@ export interface DecodedInstruction {
   dest_d?: boolean;
   dest_m?: boolean;
   jump?: number;
+}
+
+export interface CPUStats {
+  instructions_executed: number;
+  a_instruction_count: number;
+  c_instruction_count: number;
+  jump_count: number;
+  memory_reads: number;
+  memory_writes: number;
 }
 
 export interface CPUEngine {
@@ -101,6 +111,7 @@ export interface CPUEngine {
   disassemble(addr: number): string;
   disassembleRange(start: number, end: number): string[];
   getCurrentInstruction(): DecodedInstruction;
+  getStats(): CPUStats;
   getErrorMessage(): string;
   getErrorLocation(): number;
   delete(): void;
@@ -204,6 +215,7 @@ export interface JackDebugger {
   load(vm: string, smap: string, name?: string): void;
   loadVM(vm: string, name?: string): void;
   loadSourceMap(smap: string, name?: string): void;
+  loadWithSources(jackSources: [string, string][], vmSource: string, name?: string): void;
   setEntryPoint(fn: string): void;
   reset(): void;
   step(): VMState;
@@ -227,6 +239,7 @@ export interface JackDebugger {
   inspectObject(addr: number, cls: string): InspectedObject;
   inspectThis(): InspectedObject;
   inspectArray(addr: number, len: number): InspectedArray;
+  getErrorMessage(): string;
   delete(): void;
 }
 

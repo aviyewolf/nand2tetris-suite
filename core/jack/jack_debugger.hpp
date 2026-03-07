@@ -17,6 +17,7 @@
 #include <set>
 #include <unordered_map>
 #include <optional>
+#include <utility>
 
 namespace n2t {
 
@@ -79,6 +80,12 @@ public:
 
     // Load from files
     void load_files(const std::string& vm_path, const std::string& smap_path);
+
+    // Load from Jack sources + compiled VM output (auto-generates source map)
+    // jack_sources: vector of (filename, source_code) pairs
+    void load_jack(const std::vector<std::pair<std::string, std::string>>& jack_sources,
+                   const std::string& vm_source,
+                   const std::string& name = "<string>");
 
     // Load VM source only (debugging without source map)
     void load_vm(const std::string& vm_source,

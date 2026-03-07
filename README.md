@@ -165,9 +165,9 @@ nand2tetris-suite/
 │   └── jack_debugger_test.cpp  # Jack debugger tests (120 tests)
 │
 ├── cli/                        # Command-line tools
-├── web/                        # Web interface (planned)
+├── web/                        # Web interface
 │   ├── frontend/               # React/TypeScript UI
-│   └── wasm/                   # WebAssembly bindings
+│   └── wasm/                   # WebAssembly bindings (Embind)
 ├── examples/                   # Example programs (planned)
 │   ├── asm/                    # Assembly examples
 │   ├── vm/                     # VM code examples
@@ -218,8 +218,8 @@ cmake --build .
 
 - [x] **CLI tools** — cpu_sim, vm_emu, hdl_sim, jack_debug (batch + interactive REPL)
 - [ ] C API bindings for language interop
-- [ ] WebAssembly compilation
-- [ ] Web frontend (React/TypeScript)
+- [x] **WebAssembly bindings** — Embind wrappers for all four engines
+- [x] **Web frontend** — React/TypeScript UI with HDL, CPU, VM, and Jack tabs, screen display, keyboard input
 - [ ] Example programs
 - [x] **User manual** — [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md)
 

@@ -8,6 +8,7 @@
 #include "vm_engine.hpp"
 #include "vm_command.hpp"
 #include "error.hpp"
+#include "line_editor.hpp"
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -158,13 +159,12 @@ static void interactive_mode(const std::string& path) {
               << vm.get_command_count() << " commands loaded\n"
               << "Type 'help' for commands.\n\n";
 
+    LineEditor editor("> ");
     std::string line;
     while (true) {
-        std::cout << "> " << std::flush;
-        if (!std::getline(std::cin, line)) {
-            std::cout << "\n";
-            break;
-        }
+        auto result = editor.read_line();
+        if (!result) break;
+        line = *result;
 
         auto args = split_args(line);
         if (args.empty()) continue;

@@ -23,6 +23,8 @@ export function JackTab() {
 
   const [vm, setVm] = useState(VM_PLACEHOLDER);
   const [smap, setSmap] = useState(SMAP_PLACEHOLDER);
+  // Jack source files for auto source-map mode
+  const [jackSources, setJackSources] = useState<[string, string][]>([]);
   const [state, setState] = useState(0);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
@@ -53,10 +55,9 @@ export function JackTab() {
     } catch {
       setVariables([]);
     }
-    // Error: check if state is error
+    // Surface error message from underlying VM engine
     if (d.getState() === 4) {
-      // Jack debugger doesn't expose error message directly — use VM engine
-      // For now we leave previous error
+      setError(d.getErrorMessage());
     }
   }, []);
 
@@ -64,7 +65,11 @@ export function JackTab() {
     const d = dbgRef.current;
     if (!d) return false;
     try {
-      d.load(vm, smap);
+      if (jackSources.length > 0) {
+        d.loadWithSources(jackSources, vm);
+      } else {
+        d.load(vm, smap);
+      }
       syncState();
       return true;
     } catch (e) {
@@ -72,7 +77,7 @@ export function JackTab() {
       syncState();
       return false;
     }
-  }, [vm, smap, syncState]);
+  }, [vm, smap, jackSources, syncState]);
 
   const ensureLoaded = useCallback(() => {
     const d = dbgRef.current;
@@ -185,9 +190,38 @@ export function JackTab() {
           <Editor
             label="Source Map (.smap)"
             value={smap}
-            onChange={setSmap}
+            onChange={(v) => { setSmap(v); setJackSources([]); }}
             accept=".smap"
           />
+          <div className="panel" style={{ padding: 8 }}>
+            <label style={{ fontSize: 12, color: "var(--text-dim)" }}>
+              Or load .jack source files (auto source map):
+            </label>
+            <input
+              type="file"
+              accept=".jack"
+              multiple
+              style={{ fontSize: 12, marginTop: 4, display: "block" }}
+              onChange={async (e) => {
+                const files = e.target.files;
+                if (!files || files.length === 0) return;
+                const sources: [string, string][] = [];
+                for (let i = 0; i < files.length; i++) {
+                  const f = files[i];
+                  if (!f) continue;
+                  const text = await f.text();
+                  sources.push([f.name, text]);
+                }
+                setJackSources(sources);
+                setError("");
+              }}
+            />
+            {jackSources.length > 0 && (
+              <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+                {jackSources.length} .jack file(s) loaded
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right: source location, variables, call stack */}

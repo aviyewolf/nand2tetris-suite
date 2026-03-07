@@ -6,9 +6,13 @@
 // ==============================================================================
 
 #include "jack_debugger.hpp"
+#include "jack_declaration_parser.hpp"
+#include "auto_source_map.hpp"
 #include "object_inspector.hpp"
 #include "error.hpp"
+#include "line_editor.hpp"
 #include <iostream>
+#include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -21,7 +25,40 @@ static void print_usage() {
     std::cout << "Usage:\n"
               << "  jack_debug --run Prog.vm Prog.smap [-n <max>]   Run in batch mode\n"
               << "  jack_debug Prog.vm Prog.smap                     Interactive REPL\n"
+              << "  jack_debug Prog.vm Main.jack [More.jack ...]     Auto source map from .jack files\n"
+              << "  jack_debug --run Prog.vm Main.jack [-n <max>]    Batch mode with .jack files\n"
               << "  jack_debug --help                                 Show this help\n";
+}
+
+static bool ends_with(const std::string& s, const std::string& suffix) {
+    if (suffix.size() > s.size()) return false;
+    return s.compare(s.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+static std::string read_file(const std::string& path) {
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        throw FileError(path, "Cannot open file");
+    }
+    return std::string((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+}
+
+static void load_with_jack_sources(JackDebugger& dbg, const std::string& vm_path,
+                                   const std::vector<std::string>& jack_paths) {
+    std::string vm_source = read_file(vm_path);
+
+    std::vector<std::pair<std::string, std::string>> jack_sources;
+    for (const auto& path : jack_paths) {
+        std::string source = read_file(path);
+        // Extract just the filename for display
+        std::string filename = path;
+        auto slash = filename.find_last_of("/\\");
+        if (slash != std::string::npos) filename = filename.substr(slash + 1);
+        jack_sources.push_back({filename, source});
+    }
+
+    dbg.load_jack(jack_sources, vm_source, vm_path);
 }
 
 static std::vector<std::string> split_args(const std::string& line) {
@@ -89,10 +126,15 @@ static void print_stats(const JackDebugger& dbg) {
     }
 }
 
-static int batch_mode(const std::string& vm_path, const std::string& smap_path, uint64_t max_instr) {
+static int batch_mode(const std::string& vm_path, const std::string& smap_path,
+                      const std::vector<std::string>& jack_paths, uint64_t max_instr) {
     JackDebugger dbg;
     try {
-        dbg.load_files(vm_path, smap_path);
+        if (!jack_paths.empty()) {
+            load_with_jack_sources(dbg, vm_path, jack_paths);
+        } else {
+            dbg.load_files(vm_path, smap_path);
+        }
     } catch (const N2TError& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return 1;
@@ -108,26 +150,34 @@ static int batch_mode(const std::string& vm_path, const std::string& smap_path, 
     return (state == VMState::ERROR) ? 1 : 0;
 }
 
-static void interactive_mode(const std::string& vm_path, const std::string& smap_path) {
+static void interactive_mode(const std::string& vm_path, const std::string& smap_path,
+                             const std::vector<std::string>& jack_paths) {
     JackDebugger dbg;
     try {
-        dbg.load_files(vm_path, smap_path);
+        if (!jack_paths.empty()) {
+            load_with_jack_sources(dbg, vm_path, jack_paths);
+        } else {
+            dbg.load_files(vm_path, smap_path);
+        }
     } catch (const N2TError& e) {
         std::cerr << "Error: " << e.what() << "\n";
         return;
     }
 
-    std::cout << "Jack Debugger — " << vm_path << "\n"
-              << "Source map: " << smap_path << "\n"
-              << "Type 'help' for commands.\n\n";
+    std::cout << "Jack Debugger — " << vm_path << "\n";
+    if (!jack_paths.empty()) {
+        std::cout << "Source: " << jack_paths.size() << " .jack file(s) (auto source map)\n";
+    } else {
+        std::cout << "Source map: " << smap_path << "\n";
+    }
+    std::cout << "Type 'help' for commands.\n\n";
 
+    LineEditor editor("> ");
     std::string line;
     while (true) {
-        std::cout << "> " << std::flush;
-        if (!std::getline(std::cin, line)) {
-            std::cout << "\n";
-            break;
-        }
+        auto result = editor.read_line();
+        if (!result) break;
+        line = *result;
 
         auto args = split_args(line);
         if (args.empty()) continue;
@@ -215,9 +265,9 @@ static void interactive_mode(const std::string& vm_path, const std::string& smap
                 if (i > 1) expr += " ";
                 expr += args[i];
             }
-            auto result = dbg.evaluate(expr);
-            if (result) {
-                std::cout << "  = " << *result << "\n";
+            auto eval_result = dbg.evaluate(expr);
+            if (eval_result) {
+                std::cout << "  = " << *eval_result << "\n";
             } else {
                 std::cout << "Cannot evaluate: " << expr << "\n";
             }
@@ -322,22 +372,60 @@ int main(int argc, char* argv[]) {
 
     if (arg1 == "--run") {
         if (argc < 4) {
-            std::cerr << "Error: --run requires a .vm file and a .smap file\n";
+            std::cerr << "Error: --run requires a .vm file and source files\n";
             return 1;
         }
+        std::string vm_path = argv[2];
+        std::string smap_path;
+        std::vector<std::string> jack_paths;
         uint64_t max_instr = 0;
-        if (argc >= 6 && std::string(argv[4]) == "-n") {
-            max_instr = std::stoull(argv[5]);
+
+        // Classify remaining args: .jack files, .smap file, or -n flag
+        for (int i = 3; i < argc; ++i) {
+            std::string a = argv[i];
+            if (a == "-n" && i + 1 < argc) {
+                max_instr = std::stoull(argv[++i]);
+            } else if (ends_with(a, ".jack")) {
+                jack_paths.push_back(a);
+            } else if (ends_with(a, ".smap")) {
+                smap_path = a;
+            } else {
+                // Assume it's a .jack or .smap file by context
+                smap_path = a;
+            }
         }
-        return batch_mode(argv[2], argv[3], max_instr);
+
+        return batch_mode(vm_path, smap_path, jack_paths, max_instr);
     }
 
     if (argc < 3) {
-        std::cerr << "Error: interactive mode requires both .vm and .smap files\n";
+        std::cerr << "Error: requires a .vm file and source (.smap or .jack) files\n";
         print_usage();
         return 1;
     }
 
-    interactive_mode(arg1, argv[2]);
+    // Classify arguments: first is .vm, rest are .jack or .smap
+    std::string vm_path = arg1;
+    std::string smap_path;
+    std::vector<std::string> jack_paths;
+
+    for (int i = 2; i < argc; ++i) {
+        std::string a = argv[i];
+        if (ends_with(a, ".jack")) {
+            jack_paths.push_back(a);
+        } else if (ends_with(a, ".smap")) {
+            smap_path = a;
+        } else {
+            smap_path = a;
+        }
+    }
+
+    if (jack_paths.empty() && smap_path.empty()) {
+        std::cerr << "Error: requires .smap or .jack files\n";
+        print_usage();
+        return 1;
+    }
+
+    interactive_mode(vm_path, smap_path, jack_paths);
     return 0;
 }

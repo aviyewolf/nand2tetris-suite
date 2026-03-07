@@ -15,10 +15,10 @@ add_executable(n2t bindings.cpp)
 
 target_link_libraries(n2t PRIVATE
     n2t_common
-    n2t_cpu
-    n2t_vm
-    n2t_jack
-    n2t_hdl
+    cpu_engine
+    vm_engine
+    jack_debugger
+    hdl_engine
 )
 
 # Emscripten-specific link flags

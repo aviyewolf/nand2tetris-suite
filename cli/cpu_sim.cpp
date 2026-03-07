@@ -7,6 +7,7 @@
 
 #include "cpu.hpp"
 #include "error.hpp"
+#include "line_editor.hpp"
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -96,13 +97,12 @@ static void interactive_mode(const std::string& file) {
               << "ROM: " << cpu.rom_size() << " instructions loaded\n"
               << "Type 'help' for commands.\n\n";
 
+    LineEditor editor("> ");
     std::string line;
     while (true) {
-        std::cout << "> " << std::flush;
-        if (!std::getline(std::cin, line)) {
-            std::cout << "\n";
-            break;
-        }
+        auto result = editor.read_line();
+        if (!result) break;
+        line = *result;
 
         auto args = split_args(line);
         if (args.empty()) continue;

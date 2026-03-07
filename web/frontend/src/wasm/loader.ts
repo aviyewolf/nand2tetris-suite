@@ -14,14 +14,35 @@ export function useWasm(): N2TModule {
 /**
  * Load the WASM module.
  *
- * The built n2t.js file is expected at /wasm/n2t.js (copied into public/ or
- * served alongside the frontend).  Vite's dev server serves `public/` at root.
+ * The n2t.js + n2t.wasm files live in public/wasm/ and are served at /wasm/.
+ * We load n2t.js via a dynamic <script type="module"> to avoid Vite's
+ * restriction on importing JS from public/. The Emscripten glue registers
+ * createN2TModule as an ES module default export, which we capture through
+ * a global.
  */
 export async function loadWasmModule(): Promise<N2TModule> {
-  // Dynamic import so Vite doesn't try to bundle the Emscripten glue.
+  // Load the Emscripten glue via a dynamic module script that assigns
+  // the factory to a global we can read.
+  await new Promise<void>((resolve, reject) => {
+    const script = document.createElement("script");
+    script.type = "module";
+    // The inline module imports the ES-module glue and stashes the factory.
+    script.textContent = `
+      import createN2TModule from "/wasm/n2t.js";
+      window.__createN2TModule = createN2TModule;
+      window.dispatchEvent(new Event("n2t-ready"));
+    `;
+    window.addEventListener("n2t-ready", () => resolve(), { once: true });
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const factory = (await import(/* @vite-ignore */ "/wasm/n2t.js")) as any;
-  const createModule = factory.default ?? factory.createN2TModule ?? factory;
+  const createModule = (window as any).__createN2TModule;
+  if (!createModule) {
+    throw new Error("Failed to load WASM module");
+  }
+
   const mod: N2TModule = await createModule();
   return mod;
 }

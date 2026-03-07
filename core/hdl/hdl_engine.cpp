@@ -156,6 +156,26 @@ HDLState HDLEngine::run_test_string(const std::string& tst, const std::string& c
     return state_;
 }
 
+HDLState HDLEngine::prepare_test(const std::string& tst, const std::string& cmp,
+                                  const std::string& name) {
+    try {
+        state_ = HDLState::RUNNING;
+        error_message_.clear();
+
+        tst_runner_.set_chip_resolver(make_resolver());
+        if (!cmp.empty()) {
+            tst_runner_.set_compare_data(cmp);
+        }
+        tst_runner_.parse(tst, name);
+        // Don't run — just prepare for stepping
+    } catch (const N2TError& e) {
+        set_error(e.what());
+    } catch (const std::exception& e) {
+        set_error(e.what());
+    }
+    return state_;
+}
+
 HDLState HDLEngine::step_test() {
     try {
         if (state_ == HDLState::ERROR) return state_;

@@ -208,8 +208,28 @@ static val jack_inspect_array(const JackDebugger& dbg, unsigned addr, unsigned l
 }
 
 // =============================================================================
+// Jack error helper
+// =============================================================================
+
+static std::string jack_get_error_message(const JackDebugger& dbg) {
+    return dbg.engine().get_error_message();
+}
+
+// =============================================================================
 // CPU helpers
 // =============================================================================
+
+static val cpu_stats(const CPUEngine& eng) {
+    auto& s = eng.get_stats();
+    val obj = val::object();
+    obj.set("instructions_executed", static_cast<double>(s.instructions_executed));
+    obj.set("a_instruction_count", static_cast<double>(s.a_instruction_count));
+    obj.set("c_instruction_count", static_cast<double>(s.c_instruction_count));
+    obj.set("jump_count", static_cast<double>(s.jump_count));
+    obj.set("memory_reads", static_cast<double>(s.memory_reads));
+    obj.set("memory_writes", static_cast<double>(s.memory_writes));
+    return obj;
+}
 
 static val cpu_breakpoints(const CPUEngine& eng) {
     val arr = val::array();
@@ -304,6 +324,7 @@ EMSCRIPTEN_BINDINGS(n2t_hdl) {
         .function("tock",         &HDLEngine::tock)
         // Test execution
         .function("runTestString", &HDLEngine::run_test_string)
+        .function("prepareTest",  &HDLEngine::prepare_test)
         .function("stepTest",     &HDLEngine::step_test)
         // Output
         .function("getOutputTable",      &HDLEngine::get_output_table)
@@ -350,6 +371,7 @@ EMSCRIPTEN_BINDINGS(n2t_cpu) {
         .function("disassembleRange",    &cpu_disassemble_range)
         .function("getCurrentInstruction", &cpu_current_instruction)
         // Stats & errors
+        .function("getStats",         &cpu_stats)
         .function("getErrorMessage",  &CPUEngine::get_error_message)
         .function("getErrorLocation", &CPUEngine::get_error_location);
 
@@ -407,6 +429,21 @@ EMSCRIPTEN_BINDINGS(n2t_vm) {
         .function("getErrorLocation", &VMEngine::get_error_location);
 }
 
+// Helper: load Jack sources from JS array of [filename, source] pairs
+static void jack_load_with_sources(JackDebugger& dbg, val jack_sources_val,
+                                   const std::string& vm_source,
+                                   const std::string& name) {
+    std::vector<std::pair<std::string, std::string>> jack_sources;
+    unsigned len = jack_sources_val["length"].as<unsigned>();
+    for (unsigned i = 0; i < len; ++i) {
+        val pair = jack_sources_val[i];
+        std::string filename = pair[0].as<std::string>();
+        std::string source = pair[1].as<std::string>();
+        jack_sources.push_back({filename, source});
+    }
+    dbg.load_jack(jack_sources, vm_source, name);
+}
+
 EMSCRIPTEN_BINDINGS(n2t_jack) {
     // -- Jack Debugger --------------------------------------------------------
     class_<JackDebugger>("JackDebugger")
@@ -415,6 +452,7 @@ EMSCRIPTEN_BINDINGS(n2t_jack) {
         .function("load",           &JackDebugger::load)
         .function("loadVM",         &JackDebugger::load_vm)
         .function("loadSourceMap",  &JackDebugger::load_source_map)
+        .function("loadWithSources", &jack_load_with_sources)
         .function("setEntryPoint",  &JackDebugger::set_entry_point)
         .function("reset",          &JackDebugger::reset)
         // Execution
@@ -442,5 +480,7 @@ EMSCRIPTEN_BINDINGS(n2t_jack) {
         // Object inspection
         .function("inspectObject", &jack_inspect_object)
         .function("inspectThis",   &jack_inspect_this)
-        .function("inspectArray",  &jack_inspect_array);
+        .function("inspectArray",  &jack_inspect_array)
+        // Error
+        .function("getErrorMessage", &jack_get_error_message);
 }

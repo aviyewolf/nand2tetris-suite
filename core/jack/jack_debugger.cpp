@@ -3,6 +3,9 @@
 // ==============================================================================
 
 #include "jack_debugger.hpp"
+#include "jack_declaration_parser.hpp"
+#include "auto_source_map.hpp"
+#include "vm_parser.hpp"
 #include "error.hpp"
 #include <sstream>
 #include <algorithm>
@@ -28,6 +31,32 @@ void JackDebugger::load_files(const std::string& vm_path,
                               const std::string& smap_path) {
     engine_.load_file(vm_path);
     source_map_.load_file(smap_path);
+    jack_pause_reason_ = JackPauseReason::NONE;
+    jack_stats_.reset();
+}
+
+void JackDebugger::load_jack(
+    const std::vector<std::pair<std::string, std::string>>& jack_sources,
+    const std::string& vm_source,
+    const std::string& name) {
+
+    // Parse each Jack source for declarations
+    std::vector<JackClassInfo> classes;
+    classes.reserve(jack_sources.size());
+    for (const auto& [filename, source] : jack_sources) {
+        classes.push_back(parse_jack_class(source, filename));
+    }
+
+    // Parse the VM source to get commands
+    VMParser parser;
+    parser.parse_string(vm_source, name);
+    VMProgram program = parser.get_program();
+
+    // Generate source map by correlating Jack declarations with VM commands
+    source_map_ = generate_source_map(classes, program.commands);
+
+    // Load the VM source into the engine
+    engine_.load_string(vm_source, name);
     jack_pause_reason_ = JackPauseReason::NONE;
     jack_stats_.reset();
 }

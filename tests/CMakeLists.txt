@@ -16,6 +16,11 @@ add_executable(jack_debugger_test jack_debugger_test.cpp)
 target_link_libraries(jack_debugger_test PRIVATE jack_debugger)
 add_test(NAME jack_debugger_test COMMAND jack_debugger_test)
 
+# Jack Parser tests (tokenizer, declaration parser, auto source map)
+add_executable(jack_parser_test jack_parser_test.cpp)
+target_link_libraries(jack_parser_test PRIVATE jack_debugger)
+add_test(NAME jack_parser_test COMMAND jack_parser_test)
+
 # HDL Engine tests
 add_executable(hdl_engine_test hdl_engine_test.cpp)
 target_link_libraries(hdl_engine_test PRIVATE hdl_engine)

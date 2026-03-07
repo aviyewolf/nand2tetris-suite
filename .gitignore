@@ -122,3 +122,9 @@ tests/**/*.vm
 examples/**/*.hack
 examples/**/*.vm
 examples/**/*.out
+
+# WASM build directory
+build-wasm/
+
+# Generated WASM glue (build artifact copied to frontend)
+web/frontend/public/wasm/

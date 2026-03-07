@@ -497,3 +497,48 @@ body,
 .var-entry .var-value {
   color: var(--accent);
 }
+
+/* Screen canvas */
+.screen-canvas {
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+/* Keyboard status indicator */
+.keyboard-status {
+  font-size: 11px;
+  color: var(--accent);
+  font-weight: 400;
+}
+
+/* RAM address navigation */
+.ram-addr-input {
+  flex: 1;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  min-width: 0;
+}
+
+.ram-addr-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.ram-go-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ram-go-btn:hover {
+  border-color: var(--accent);
+}

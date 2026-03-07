@@ -52,6 +52,8 @@ public:
     // Test script execution
     HDLState run_test_string(const std::string& tst, const std::string& cmp = "",
                              const std::string& name = "<tst>");
+    HDLState prepare_test(const std::string& tst, const std::string& cmp = "",
+                          const std::string& name = "<tst>");
     HDLState step_test();
 
     // Output & comparison
